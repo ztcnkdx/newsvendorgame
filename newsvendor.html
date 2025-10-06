@@ -132,20 +132,11 @@
     </div>
 
     <script>
-        // --- INSTRUCTOR: EDIT GAME PARAMETERS HERE ---
-        const gameParameters = {
-            // Demand parameters (hidden from student)
-            mean: 100,
-            stdDev: 25,
-            
-            // Economic parameters (shown to student)
-            sellingPrice: 12,
-            purchaseCost: 10,
-            salvageValue: 3,
-            
-            // Game length
-            totalRounds: 20,
-        };
+        // --- INSTRUCTOR: COPY ENCODED GAME PARAMETERS HERE ---
+        const encodedParams = "eyJtZWFuIjoxMDAsInN0ZERldiI6MjUsInNlbGxpbmdQcmljZSI6MTIsInB1cmNoYXNlQ29zdCI6MTAsInNhbHZhZ2VWYWx1ZSI6MywidG90YWxSb3VuZHMiOjIwfQ==";
+
+    
+        const gameParameters = JSON.parse(atob(encodedParams));
         // ---------------------------------------------
 
         // DOM Elements
@@ -331,6 +322,7 @@
     </script>
 </body>
 </html>
+
 
 
 
