@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>International Expansion — Location Choice Game (Sneakers)</title>
+  <meta name="description" content="Classroom game to explore location choice for a US sneaker brand across culture, legal, political, economic systems, and development." />
+  <!-- Tailwind CSS for quick styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Fonts (optional) -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'; }
+  </style>
+  <!-- React + ReactDOM UMD (no build tools needed) -->
+  <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <!-- PropTypes UMD to avoid oneOfType errors from any library expecting it -->
+  <script crossorigin src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+  <!-- Chart.js UMD (replaces Recharts for reliability on static hosts) -->
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <!-- Babel Standalone for in-browser JSX transform (okay for teaching/demo) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <noscript>
+    <div class="m-4 rounded bg-red-50 p-3 text-red-700">This app requires JavaScript.</div>
+  </noscript>
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="env,react">
+    const { useMemo, useState, useEffect, useRef } = React;
+
+    // ------------------------
+    // Mock data (scaled 0–100 unless noted)
+    // ------------------------
+    const COUNTRIES = [
+      { code: "JP", name: "Japan", cultureDistance: 35, legalStrength: 86, politicalStability: 85, economicFreedom: 74, development: 92, marketSize: 125, tariff: 4, logisticsDays: 14, laborCostIdx: 82, fxRisk: 28 },
+      { code: "DE", name: "Germany", cultureDistance: 40, legalStrength: 88, politicalStability: 83, economicFreedom: 76, development: 95, marketSize: 84, tariff: 0, logisticsDays: 16, laborCostIdx: 85, fxRisk: 22 },
+      { code: "GB", name: "United Kingdom", cultureDistance: 20, legalStrength: 90, politicalStability: 78, economicFreedom: 78, development: 93, marketSize: 67, tariff: 0, logisticsDays: 15, laborCostIdx: 80, fxRisk: 30 },
+      { code: "MX", name: "Mexico", cultureDistance: 45, legalStrength: 55, politicalStability: 55, economicFreedom: 65, development: 48, marketSize: 130, tariff: 0, logisticsDays: 5, laborCostIdx: 35, fxRisk: 52 },
+      { code: "BR", name: "Brazil", cultureDistance: 60, legalStrength: 50, politicalStability: 54, economicFreedom: 53, development: 40, marketSize: 214, tariff: 16, logisticsDays: 12, laborCostIdx: 40, fxRisk: 60 },
+      { code: "CN", name: "China", cultureDistance: 70, legalStrength: 55, politicalStability: 70, economicFreedom: 58, development: 72, marketSize: 1410, tariff: 15, logisticsDays: 20, laborCostIdx: 55, fxRisk: 45 },
+      { code: "IN", name: "India", cultureDistance: 65, legalStrength: 56, politicalStability: 62, economicFreedom: 64, development: 33, marketSize: 1420, tariff: 20, logisticsDays: 22, laborCostIdx: 25, fxRisk: 58 },
+      { code: "VN", name: "Vietnam", cultureDistance: 62, legalStrength: 50, politicalStability: 70, economicFreedom: 61, development: 37, marketSize: 100, tariff: 10, logisticsDays: 18, laborCostIdx: 20, fxRisk: 55 },
+      { code: "KR", name: "South Korea", cultureDistance: 38, legalStrength: 84, politicalStability: 77, economicFreedom: 73, development: 89, marketSize: 52, tariff: 0, logisticsDays: 16, laborCostIdx: 75, fxRisk: 28 },
+      { code: "ZA", name: "South Africa", cultureDistance: 55, legalStrength: 60, politicalStability: 50, economicFreedom: 61, development: 40, marketSize: 60, tariff: 18, logisticsDays: 20, laborCostIdx: 30, fxRisk: 65 },
+      { code: "FR", name: "France", cultureDistance: 35, legalStrength: 86, politicalStability: 79, economicFreedom: 70, development: 94, marketSize: 65, tariff: 0, logisticsDays: 16, laborCostIdx: 83, fxRisk: 25 },
+      { code: "AU", name: "Australia", cultureDistance: 25, legalStrength: 88, politicalStability: 86, economicFreedom: 80, development: 96, marketSize: 26, tariff: 0, logisticsDays: 16, laborCostIdx: 90, fxRisk: 20 },
+    ];
+
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const norm = (v, lo, hi) => (v - lo) / (hi - lo);
+
+    const DEFAULT_WEIGHTS = { culture: 0.2, legal: 0.2, political: 0.2, econSystem: 0.2, development: 0.2 };
+    const DEFAULT_OPERATIONS = { tariffWeight: 0.4, logisticsWeight: 0.3, laborCostWeight: 0.2, fxRiskWeight: 0.1 };
+
+    const EVENT_DECK = [
+      { id: 'tariff_hike', name: 'Protectionism Wave', text: 'US raises tariffs on select imports', effect: (c) => ({ ...c, tariff: clamp(c.tariff + (c.tariff > 0 ? 5 : 2), 0, 40) }) },
+      { id: 'fx_shock', name: 'FX Shock', text: 'Currency volatility spikes', effect: (c) => ({ ...c, fxRisk: clamp(c.fxRisk + 10, 0, 100) }) },
+      { id: 'ip_push', name: 'IP Enforcement Drive', text: 'Legal reforms strengthen IP protection', effect: (c) => ({ ...c, legalStrength: clamp(c.legalStrength + 8, 0, 100) }) },
+      { id: 'trend_sneaker', name: 'Sneaker Hype', text: 'Streetwear trend boosts demand', effect: (c) => ({ ...c, marketSize: clamp(c.marketSize * 1.05, 10, 1600) }) },
+      { id: 'port_congestion', name: 'Port Congestion', text: 'Global logistics delays worsen', effect: (c) => ({ ...c, logisticsDays: clamp(c.logisticsDays + 4, 3, 60) }) },
+    ];
+
+    function useRandomEvent(active, seed) {
+      const idx = Math.abs(Math.sin(seed) * 1000) % EVENT_DECK.length;
+      const event = EVENT_DECK[Math.floor(idx)];
+      return active ? event : null;
+    }
+
+    function ScoreExplainer() {
+      return (
+        <details className="mt-2 text-sm text-slate-600">
+          <summary className="cursor-pointer font-medium">How scoring works</summary>
+          <div className="mt-2 space-y-2">
+            <p>
+              Each country’s <span className="font-semibold">Market Fit</span> combines five national differences: lower
+              <em> culture distance</em> (easier brand translation), stronger <em>legal</em> systems, higher
+              <em> political stability</em>, more market-oriented <em>economic systems</em>, and higher
+              <em> economic development</em> (GDP per capita). Instructor-set weights define their importance.
+            </p>
+            <p>
+              <span className="font-semibold">Operating Friction</span> deducts value via tariffs, logistics time,
+              labor cost, and FX risk.
+            </p>
+            <p>
+              <span className="font-semibold">Expected Profit</span> ≈ (Market Size × Market Fit) − (Operating Friction × scale).
+              Numbers are normalized for pedagogy—not forecasts.
+            </p>
+          </div>
+        </details>
+      );
+    }
+
+    // -------- Chart helpers using Chart.js --------
+    function useChart(canvasRef, config) {
+      useEffect(() => {
+        if (!window.Chart || !canvasRef.current) return;
+        const ctx = canvasRef.current.getContext('2d');
+        const chart = new window.Chart(ctx, config);
+        return () => chart.destroy();
+      }, [canvasRef, JSON.stringify(config)]);
+    }
+
+    function RadarCard({ selected, countries }) {
+      const canvasRef = useRef(null);
+      const datasets = selected.map((s, idx) => {
+        const c = countries.find((x) => x.code === s.code);
+        return {
+          label: s.name,
+          data: [100 - c.cultureDistance, c.legalStrength, c.politicalStability, c.economicFreedom, c.development],
+          fill: true,
+        };
+      });
+      useChart(canvasRef, {
+        type: 'radar',
+        data: {
+          labels: ['Culture Fit', 'Legal', 'Political', 'Econ System', 'Development'],
+          datasets,
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } },
+      });
+      return (
+        <div className="rounded-2xl bg-white p-3 shadow-sm">
+          <h3 className="mb-2 text-sm font-semibold">Radar: National Differences (selected)</h3>
+          <div className="h-64"><canvas ref={canvasRef} /></div>
+        </div>
+      );
+    }
+
+    function BarCard({ rows }) {
+      const canvasRef = useRef(null);
+      useChart(canvasRef, {
+        type: 'bar',
+        data: {
+          labels: rows.slice(0, 8).map((r) => r.code),
+          datasets: [{ label: 'Expected Profit', data: rows.slice(0, 8).map((r) => r.profit) }],
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true } } },
+      });
+      return (
+        <div className="rounded-2xl bg-white p-3 shadow-sm">
+          <h3 className="mb-2 text-sm font-semibold">Profit (selected vs. others)</h3>
+          <div className="h-64"><canvas ref={canvasRef} /></div>
+        </div>
+      );
+    }
+
+    function LineCard({ timeline }) {
+      const canvasRef = useRef(null);
+      useChart(canvasRef, {
+        type: 'line',
+        data: {
+          labels: timeline.map((d) => d.round),
+          datasets: [
+            { label: 'Cumulative', data: timeline.map((d) => d.cum) },
+            { label: 'Round Profit', data: timeline.map((d) => d.profit) },
+          ],
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } },
+      });
+      return (
+        <div className="rounded-2xl bg-white p-3 shadow-sm">
+          <h3 className="mb-2 text-sm font-semibold">Cumulative Profit Timeline</h3>
+          <div className="h-48"><canvas ref={canvasRef} /></div>
+        </div>
+      );
+    }
+
+    function InternationalLocationGame() {
+      const [weights, setWeights] = useState(DEFAULT_WEIGHTS);
+      const [ops, setOps] = useState(DEFAULT_OPERATIONS);
+      const [rounds, setRounds] = useState(3);
+      const [currentRound, setCurrentRound] = useState(1);
+      const [instructorMode, setInstructorMode] = useState(false);
+      const [randomEventsOn, setRandomEventsOn] = useState(true);
+      const [seed, setSeed] = useState(1);
+      const [picks, setPicks] = useState([]);
+      const [history, setHistory] = useState([]);
+
+      const event = useRandomEvent(randomEventsOn, seed);
+
+      const countriesThisRound = useMemo(() => {
+        if (!event) return COUNTRIES;
+        return COUNTRIES.map(event.effect);
+      }, [event]);
+
+      function computeMarketFit(c) {
+        const cultureFit = 100 - c.cultureDistance;
+        const parts = [
+          { key: 'culture', v: cultureFit },
+          { key: 'legal', v: c.legalStrength },
+          { key: 'political', v: c.politicalStability },
+          { key: 'econSystem', v: c.economicFreedom },
+          { key: 'development', v: c.development },
+        ];
+        const wsum = Object.values(weights).reduce((a, b) => a + b, 0);
+        const score = parts.reduce((acc, p) => acc + (weights[p.key] * p.v), 0) / (wsum || 1);
+        return clamp(score, 0, 100);
+      }
+
+      function computeFriction(c) {
+        const tariffN = clamp(c.tariff * 2, 0, 100);
+        const logiN = clamp(norm(c.logisticsDays, 3, 30) * 100, 0, 100);
+        const laborN = clamp(c.laborCostIdx, 0, 100);
+        const fxN = clamp(c.fxRisk, 0, 100);
+        const wsum = ops.tariffWeight + ops.logisticsWeight + ops.laborCostWeight + ops.fxRiskWeight;
+        const score = (
+          ops.tariffWeight * tariffN +
+          ops.logisticsWeight * logiN +
+          ops.laborCostWeight * laborN +
+          ops.fxRiskWeight * fxN
+        ) / (wsum || 1);
+        return clamp(score, 0, 100);
+      }
+
+      function expectedProfit(c) {
+        const fit = computeMarketFit(c) / 100;
+        const friction = computeFriction(c) / 100;
+        const demandScale = clamp(c.marketSize, 10, 1600);
+        const gross = demandScale * fit;
+        const penalty = demandScale * 0.5 * friction;
+        const profit = gross - penalty;
+        return Math.round(profit * 10) / 10;
+      }
+
+      const tableRows = useMemo(() => {
+        return countriesThisRound
+          .map((c) => ({ ...c, fit: Math.round(computeMarketFit(c)), friction: Math.round(computeFriction(c)), profit: expectedProfit(c) }))
+          .sort((a, b) => b.profit - a.profit);
+      }, [countriesThisRound, weights, ops]);
+
+      const selected = tableRows.filter((r) => picks.includes(r.code));
+
+      function togglePick(code) {
+        setPicks((prev) => {
+          if (prev.includes(code)) return prev.filter((x) => x !== code);
+          if (prev.length >= 3) return prev;
+          return [...prev, code];
+        });
+      }
+
+      function nextRound() {
+        if (currentRound > rounds) return;
+        const profits = selected.map((s) => ({ code: s.code, profit: s.profit }));
+        const record = { round: currentRound, picks: [...picks], profits, event: event?.name || null };
+        setHistory((h) => [...h, record]);
+        setSeed((s) => s + 1.2345);
+        setCurrentRound((r) => r + 1);
+        setPicks([]);
+      }
+
+      function resetGame() {
+        setCurrentRound(1);
+        setHistory([]);
+        setPicks([]);
+        setSeed(1);
+      }
+
+      const cumulativeProfit = history.reduce((acc, r) => acc + r.profits.reduce((a, p) => a + p.profit, 0), 0);
+      const timelineData = history.map((r, i) => ({
+        round: r.round,
+        profit: r.profits.reduce((a, p) => a + p.profit, 0),
+        cum: history.slice(0, i + 1).reduce((sum, rr) => sum + rr.profits.reduce((a, p) => a + p.profit, 0), 0),
+      }));
+
+      function exportCSV() {
+        const headers = ['round', 'event', 'pick_code', 'pick_name', 'profit'];
+        const lines = [headers.join(',')];
+        history.forEach((r) => {
+          r.profits.forEach((p) => {
+            const country = COUNTRIES.find((c) => c.code === p.code);
+            lines.push([r.round, r.event || '', p.code, country?.name || '', p.profit].join(','));
+          });
+        });
+        const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'international_location_game_results.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      // ---------- Simple built-in self-tests (run from Instructor Mode) ----------
+      const [testOutput, setTestOutput] = useState('');
+      function runSelfTests() {
+        const results = [];
+        try {
+          results.push(['Chart.js global present', !!window.Chart]);
+          const fitOk = COUNTRIES.every((c) => {
+            const v = Math.round((100 - c.cultureDistance));
+            return v >= 0 && v <= 100;
+          });
+          results.push(['Culture Fit range 0-100', fitOk]);
+          const rows = countriesThisRound.map((c) => expectedProfit(c));
+          const numeric = rows.every((x) => typeof x === 'number' && isFinite(x));
+          results.push(['Profit numeric', numeric]);
+          const sorted = tableRows.every((r, i, arr) => i === 0 || arr[i - 1].profit >= r.profit);
+          results.push(['Table sorted by profit desc', sorted]);
+          if (!picks.length && tableRows[0]) togglePick(tableRows[0].code);
+          const canLock = (picks.length > 0) && (currentRound <= rounds);
+          results.push(['Can lock round when a pick exists', canLock]);
+        } catch (e) {
+          results.push(['Self-test exception', false, String(e)]);
+        }
+        setTestOutput(results.map(([name, ok, extra]) => `${ok ? '✅' : '❌'} ${name}${extra ? ' — ' + extra : ''}`).join('\n'));
+      }
+
+      return (
+        <div className="min-h-screen">
+          <div className="mx-auto max-w-7xl px-4 py-6">
+            <header className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h1 className="text-2xl font-bold">International Expansion — Location Choice Game (Sneakers)</h1>
+                <p className="text-sm text-slate-600">You are a US sneaker brand deciding where to expand next. Compare countries, select up to three per round, and track results.</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="inline-flex items-center gap-2 text-sm">
+                  <input type="checkbox" className="h-4 w-4" checked={instructorMode} onChange={(e) => setInstructorMode(e.target.checked)} />
+                  Instructor Mode
+                </label>
+                <button onClick={resetGame} className="rounded-2xl border px-3 py-1.5 text-sm shadow-sm hover:bg-white">Reset</button>
+              </div>
+            </header>
+
+            {instructorMode && (
+              <section className="mb-6 grid grid-cols-1 gap-4 rounded-2xl bg-white p-4 shadow-sm md:grid-cols-3">
+                <div>
+                  <h2 className="mb-2 text-lg font-semibold">Weights: National Differences</h2>
+                  {Object.keys(weights).map((k) => (
+                    <div key={k} className="mb-2">
+                      <label className="flex items-center justify-between text-sm">
+                        <span className="capitalize">{k.replace('econSystem', 'economic system')}</span>
+                        <span className="tabular-nums">{weights[k].toFixed(2)}</span>
+                      </label>
+                      <input type="range" min={0} max={1} step={0.01} value={weights[k]} onChange={(e) => setWeights({ ...weights, [k]: Number(e.target.value) })} className="w-full" />
+                    </div>
+                  ))}
+                  <p className="mt-1 text-xs text-slate-500">Tip: Emphasize culture for branding fit, or legal for IP-heavy strategies.</p>
+                </div>
+
+                <div>
+                  <h2 className="mb-2 text-lg font-semibold">Weights: Operating Friction</h2>
+                  {Object.entries(ops).map(([k, v]) => (
+                    <div key={k} className="mb-2">
+                      <label className="flex items-center justify-between text-sm">
+                        <span className="capitalize">{k.replace('Weight', '')}</span>
+                        <span className="tabular-nums">{v.toFixed(2)}</span>
+                      </label>
+                      <input type="range" min={0} max={1} step={0.01} value={v} onChange={(e) => setOps({ ...ops, [k]: Number(e.target.value) })} className="w-full" />
+                    </div>
+                  ))}
+                  <p className="mt-1 text-xs text-slate-500">Tariffs/logistics penalize import-heavy models; labor cost matters for local manufacturing.</p>
+                </div>
+
+                <div>
+                  <h2 className="mb-2 text-lg font-semibold">Game Settings</h2>
+                  <div className="mb-3 flex items-center justify-between text-sm">
+                    <label>Rounds</label>
+                    <input type="number" min={1} max={10} value={rounds} onChange={(e) => setRounds(Number(e.target.value))} className="w-20 rounded border px-2 py-1" />
+                  </div>
+                  <label className="mb-3 flex items-center justify-between text-sm">
+                    <span>Random Events</span>
+                    <input type="checkbox" className="h-4 w-4" checked={randomEventsOn} onChange={(e) => setRandomEventsOn(e.target.checked)} />
+                  </label>
+                  <button onClick={exportCSV} className="mt-2 w-full rounded-2xl border px-3 py-2 text-sm shadow-sm hover:bg-white">Export Results (CSV)</button>
+
+                  {/* Diagnostics for instructors */}
+                  <div className="mt-4 rounded-xl border p-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <h3 className="text-sm font-semibold">Diagnostics</h3>
+                      <button onClick={runSelfTests} className="rounded-lg border px-2 py-1 text-xs">Run Self-Test</button>
+                    </div>
+                    <pre className="whitespace-pre-wrap text-xs text-slate-700">{testOutput || 'Click "Run Self-Test" to verify libraries and core logic.'}</pre>
+                  </div>
+
+                  <ScoreExplainer />
+                </div>
+              </section>
+            )}
+
+            {/* Round & Event banner */}
+            <div className="mb-4 flex items-center justify-between rounded-2xl bg-white p-3 shadow-sm">
+              <div className="flex items-center gap-3">
+                <span className="rounded-full bg-slate-900 px-3 py-1 text-sm font-semibold text-white">Round {Math.min(currentRound, rounds)}</span>
+                {event ? (
+                  <span className="text-sm text-slate-700"><span className="font-semibold">Event:</span> {event.name} — {event.text}</span>
+                ) : (
+                  <span className="text-sm text-slate-500">No special events</span>
+                )}
+              </div>
+              <div className="text-sm text-slate-600">Cumulative Profit: <span className="tabular-nums font-semibold">{cumulativeProfit.toFixed(1)}</span></div>
+            </div>
+
+            {/* Main grid */}
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              {/* Country table */}
+              <section className="md:col-span-2 rounded-2xl bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold">Compare Countries</h2>
+                  <div className="text-xs text-slate-500">Select up to 3. Click a row to toggle.</div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="sticky top-0 bg-slate-100">
+                      <tr>
+                        <th className="px-2 py-2">Pick</th>
+                        <th className="px-2 py-2">Country</th>
+                        <th className="px-2 py-2">Fit</th>
+                        <th className="px-2 py-2">Friction</th>
+                        <th className="px-2 py-2">Market Size</th>
+                        <th className="px-2 py-2">Profit</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tableRows.map((r) => (
+                        <tr key={r.code} onClick={() => togglePick(r.code)} className={`cursor-pointer border-b hover:bg-slate-50 ${picks.includes(r.code) ? 'bg-slate-100' : ''}`}>
+                          <td className="px-2 py-2"><input type="checkbox" checked={picks.includes(r.code)} readOnly /></td>
+                          <td className="px-2 py-2 font-medium">{r.name}</td>
+                          <td className="px-2 py-2 tabular-nums">{r.fit}</td>
+                          <td className="px-2 py-2 tabular-nums">{r.friction}</td>
+                          <td className="px-2 py-2 tabular-nums">{Math.round(r.marketSize)}</td>
+                          <td className="px-2 py-2 tabular-nums font-semibold">{r.profit}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-3 flex items-center justify-end gap-2">
+                  <button onClick={nextRound} disabled={currentRound > rounds || picks.length === 0} className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
+                    {currentRound <= rounds ? 'Lock Picks & End Round' : 'Game Finished'}
+                  </button>
+                </div>
+              </section>
+
+              {/* Visuals */}
+              <section className="space-y-4">
+                <RadarCard selected={selected} countries={countriesThisRound} />
+                <BarCard rows={tableRows} />
+                <LineCard timeline={timelineData} />
+              </section>
+            </div>
+
+            {/* Debrief */}
+            <section className="mt-6 rounded-2xl bg-white p-4 shadow-sm">
+              <h2 className="mb-2 text-lg font-semibold">Debrief prompts</h2>
+              <ul className="list-disc space-y-1 pl-6 text-sm">
+                <li>How did your choices change when culture weight increased vs. legal weight?</li>
+                <li>Which countries looked attractive on market size but fell after friction penalties?</li>
+                <li>How did the random event this round alter your top choices?</li>
+                <li>If manufacturing locally, which weights would you change and why?</li>
+                <li>What data would you request to replace these proxies for a real decision?</li>
+              </ul>
+              <p className="mt-2 text-xs text-slate-500">Note: All figures are pedagogical proxies, not forecasts.</p>
+            </section>
+
+            <footer className="mt-6 text-center text-xs text-slate-500">
+              © {new Date().getFullYear()} IB Location Choice Game — Single-file HTML
+            </footer>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<InternationalLocationGame />);
+  </script>
+</body>
+</html>
